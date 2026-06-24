@@ -1,0 +1,41 @@
+name: Build & Push via OIDC
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write # ← required to issue the OIDC Token
+  contents: read
+
+jobs:
+  build-push:
+    runs-on: ubuntu-24.04
+    env:
+      AWS_REGION: ap-southeast-2
+      ECR_REPO: code-to-cloud-lab
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin \
+              ${{ secrets.ECR_REGISTRY }}
+
+      - name: Write .env
+        run: |
+          echo "DOCKER_IMAGE_NAME=${{ secrets.ECR_REGISTRY }}/$ECR_REPO" > .env
+          echo "TAG=${GITHUB_SHA}" >> .env
+
+      - name: Build & push via Makefile
+        run: |
+          make build \
+            IMAGE_NAME=${{ secrets.ECR_REGISTRY }}/$ECR_REPO TAG=${GITHUB_SHA}
+          make push \
+            IMAGE_NAME=${{ secrets.ECR_REGISTRY }}/$ECR_REPO TAG=${GITHUB_SHA}
